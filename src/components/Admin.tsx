@@ -136,7 +136,7 @@ export function Admin() {
       const chunks = chunksOf(parsed.rows);
       const preview: CompanyPreview[] = [];
       for (let i = 0; i < chunks.length; i++) {
-        setProgress(`Checking ${i + 1} of ${chunks.length}…`);
+        setProgress(`Checking ${i + 1} of ${chunks.length} (about 5 s each)…`);
         preview.push(...(await post<{ companies: CompanyPreview[] }>("/api/admin/ace", { action: "preview", rows: chunks[i] })).companies);
       }
       setAce({ fileName: file.name, chunks, preview, errors: parsed.errors, missing: parsed.missing, mcapSource: parsed.mcapSource, hasLatestEv: parsed.hasLatestEv });
@@ -334,9 +334,12 @@ export function Admin() {
 
             <Section title="Ace Equity upload" note="the Query Expression export (.xlsx or .csv) · back-dated files replace derived days · licensed data, stored only here">
               <input type="file" accept=".xlsx,.xls,.csv" disabled={busy !== null} onChange={(e) => e.target.files?.[0] && pickAce(e.target.files[0])} />
-              {busy === "ace" && progress && <span style={{ marginLeft: 10 }}>{progress}</span>}
+              {busy === "ace" && <span style={{ marginLeft: 10 }}>{progress ?? "Reading the file…"}</span>}
               {ace && (
                 <div style={{ marginTop: 12 }}>
+                  <p className="stale" style={{ margin: "0 0 8px", fontWeight: 700 }}>
+                    Preview only — nothing is saved until you press Save below.
+                  </p>
                   {ace.missing.length > 0 && <p className="stale">Not in this file: {ace.missing.join(", ")}.</p>}
                   <p style={{ margin: "0 0 8px", color: "#4b5563" }}>
                     Daily Mcap: {ace.mcapSource === "ndp_mcap" ? "from NDP_Mcap" : "close × the Latest No of shares (no NDP_Mcap in this file, so share-count-jump alerts are skipped)"} · Net debt for EV:{" "}
@@ -378,7 +381,8 @@ export function Admin() {
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                     <button className="btn" onClick={saveAce} disabled={busy !== null}>
-                      Save {ace.preview.reduce((n, c) => n + c.added + c.changed, 0).toLocaleString("en-IN")} new or changed days
+                      Save: {ace.preview.reduce((n, c) => n + c.added + c.changed, 0).toLocaleString("en-IN")} new or changed days
+                      {ace.hasLatestEv ? ` + net debt for ${ace.preview.length} companies` : ""}
                     </button>
                     <button className="btn ghost" onClick={() => setAce(null)} disabled={busy !== null}>
                       Cancel
