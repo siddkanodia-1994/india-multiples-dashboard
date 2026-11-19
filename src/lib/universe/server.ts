@@ -1,7 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { activityLog, dhanScrips, nifty500, stocks, uploadBatches } from "../db/schema";
-import { isLenderIndustry, nameSimilarity, normalizeName, splitCsvLine, type Nifty500Row } from "./match";
+import { aceDaily, activityLog, dhanScrips, nifty500, stocks, uploadBatches } from "../db/schema";
+import { fetchDailyCloses, sleep } from "../dhan/client";
+import { getDhanCredentials } from "../dhan/token";
+import { isLenderIndustry, matchScore, normalizeName, splitCsvLine, type Nifty500Row } from "./match";
 
 // The universe: Ace stocks matched to NSE symbols, ISINs and DHAN security IDs
 // (DECISIONS.md). DHAN's public scrip master supplies security IDs; the
@@ -24,7 +26,7 @@ export async function refreshDhanScrips(): Promise<number> {
   const lines = text.split(/\r?\n/);
   const h = splitCsvLine(lines[0]);
   const c = (name: string) => h.indexOf(name);
-  const [ex, seg, id, isin, inst, sym, disp, series] = ["EXCH_ID", "SEGMENT", "SECURITY_ID", "ISIN", "INSTRUMENT", "UNDERLYING_SYMBOL", "DISPLAY_NAME", "SERIES"].map(c);
+  const [ex, seg, id, isin, inst, sym, disp, series, legal] = ["EXCH_ID", "SEGMENT", "SECURITY_ID", "ISIN", "INSTRUMENT", "UNDERLYING_SYMBOL", "DISPLAY_NAME", "SERIES", "SYMBOL_NAME"].map(c);
   if ([ex, seg, id, inst, sym, disp, series].some((i) => i < 0)) throw new Error("DHAN scrip master has unexpected columns.");
   const now = new Date();
   const rows: (typeof dhanScrips.$inferInsert)[] = [];
@@ -34,7 +36,7 @@ export async function refreshDhanScrips(): Promise<number> {
     if (f[inst] !== "EQUITY" || !EQUITY_SERIES.has(f[series])) continue;
     const securityId = Number(f[id]);
     if (!Number.isInteger(securityId)) continue;
-    rows.push({ securityId, symbol: f[sym], isin: f[isin] && f[isin] !== "NA" ? f[isin] : null, name: f[disp] || null, refreshedAt: now });
+    rows.push({ securityId, symbol: f[sym], isin: f[isin] && f[isin] !== "NA" ? f[isin] : null, name: f[disp] || null, legalName: legal >= 0 ? f[legal] || null : null, refreshedAt: now });
   }
   for (let i = 0; i < rows.length; i += 1000) {
     await db
@@ -42,7 +44,7 @@ export async function refreshDhanScrips(): Promise<number> {
       .values(rows.slice(i, i + 1000))
       .onConflictDoUpdate({
         target: dhanScrips.securityId,
-        set: { symbol: sql`excluded.symbol`, isin: sql`excluded.isin`, name: sql`excluded.name`, refreshedAt: sql`excluded.refreshed_at` },
+        set: { symbol: sql`excluded.symbol`, isin: sql`excluded.isin`, name: sql`excluded.name`, legalName: sql`excluded.legal_name`, refreshedAt: sql`excluded.refreshed_at` },
       });
   }
   return rows.length;
@@ -71,6 +73,8 @@ export interface Candidate {
   isin: string | null;
   name: string | null;
   score: number;
+  /** Same name after normalising (or the same company in the Nifty 500 file): safe to apply without a price check. */
+  exact: boolean;
 }
 
 /** The best DHAN rows for an Ace name: Nifty 500 name → ISIN first, then DHAN's own names. */
@@ -79,14 +83,12 @@ export async function candidatesFor(aceName: string, limit = 5): Promise<Candida
   const target = normalizeName(aceName);
   const viaN500 = new Set(n500.filter((n) => normalizeName(n.name) === target).map((n) => n.isin));
   return scrips
-    .map((s) => ({
-      securityId: s.securityId,
-      symbol: s.symbol,
-      isin: s.isin,
-      name: s.name,
-      score: (s.isin && viaN500.has(s.isin)) || normalizeName(s.name ?? "") === target ? 1 : Math.max(nameSimilarity(aceName, s.name ?? ""), nameSimilarity(aceName, s.symbol) * 0.9),
-    }))
-    .filter((c) => c.score > 0.2)
+    .map((s) => {
+      const exact = Boolean(s.isin && viaN500.has(s.isin)) || normalizeName(s.name ?? "") === target || normalizeName(s.legalName ?? "") === target;
+      const score = exact ? 1 : Math.max(matchScore(aceName, s.name ?? ""), matchScore(aceName, s.legalName ?? ""), matchScore(aceName, s.symbol) * 0.9);
+      return { securityId: s.securityId, symbol: s.symbol, isin: s.isin, name: s.name, score, exact };
+    })
+    .filter((c) => c.score > 0.3)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
@@ -98,9 +100,9 @@ export async function searchScrips(q: string): Promise<Candidate[]> {
   const rows = await db
     .select()
     .from(dhanScrips)
-    .where(sql`${dhanScrips.symbol} ilike ${like} or ${dhanScrips.name} ilike ${like}`)
+    .where(sql`${dhanScrips.symbol} ilike ${like} or ${dhanScrips.name} ilike ${like} or ${dhanScrips.legalName} ilike ${like}`)
     .limit(12);
-  return rows.map((s) => ({ securityId: s.securityId, symbol: s.symbol, isin: s.isin, name: s.name, score: 0 }));
+  return rows.map((s) => ({ securityId: s.securityId, symbol: s.symbol, isin: s.isin, name: s.name, score: 0, exact: false }));
 }
 
 /** Applies a DHAN match to an Ace stock; sets industry and the EV/EBITDA default on first match. */
@@ -132,18 +134,48 @@ export async function ensureFreshScrips(): Promise<void> {
   if (!r?.at || Date.now() - new Date(r.at).getTime() > 86_400_000) await refreshDhanScrips();
 }
 
-/** Matches every unmatched Ace stock whose name has exactly one perfect candidate. */
+/** A close within this of Ace's own close on Ace's last day confirms a name match. */
+const PRICE_MATCH = 0.015;
+const MIN_SCORE = 0.5;
+
+/**
+ * Matches every unmatched Ace stock. An exact name (or Nifty 500) match is
+ * applied directly. Otherwise the best few candidates by name are checked
+ * against Ace's own last close: the match is applied only when exactly one
+ * candidate's DHAN close that day agrees within 1.5%, so a look-alike name
+ * can't slip through.
+ */
 export async function autoMatch(actor: string): Promise<{ matched: string[]; unmatched: { stockId: number; name: string; candidates: Candidate[] }[] }> {
   const open = await db.select().from(stocks).where(isNull(stocks.dhanSecurityId));
   const matched: string[] = [];
   const unmatched: { stockId: number; name: string; candidates: Candidate[] }[] = [];
+  const creds = await getDhanCredentials().catch(() => null);
   for (const s of open) {
     const cands = await candidatesFor(s.aceName);
-    const perfect = cands.filter((c) => c.score === 1);
-    if (perfect.length === 1) {
+    let pick: Candidate | null = null;
+    const exact = cands.filter((c) => c.exact);
+    if (exact.length === 1) pick = exact[0];
+    else if (creds) {
+      const [last] = await db
+        .select({ date: aceDaily.date, close: aceDaily.close })
+        .from(aceDaily)
+        .where(and(eq(aceDaily.stockId, s.id), isNotNull(aceDaily.close)))
+        .orderBy(desc(aceDaily.date))
+        .limit(1);
+      if (last?.close) {
+        const agree: Candidate[] = [];
+        for (const c of cands.filter((x) => x.score >= MIN_SCORE).slice(0, 3)) {
+          const day = await fetchDailyCloses(c.securityId, last.date, last.date, creds).catch(() => []);
+          if (day.length && Math.abs(day[0].close / last.close - 1) <= PRICE_MATCH) agree.push(c);
+          await sleep(300);
+        }
+        if (agree.length === 1) pick = agree[0];
+      }
+    }
+    if (pick) {
       try {
-        await applyMatch(s.id, perfect[0].securityId, actor);
-        matched.push(`${s.name} → ${perfect[0].symbol}`);
+        await applyMatch(s.id, pick.securityId, actor);
+        matched.push(`${s.name} → ${pick.symbol}`);
         continue;
       } catch {
         // already taken by another stock: leave it for a person to pick

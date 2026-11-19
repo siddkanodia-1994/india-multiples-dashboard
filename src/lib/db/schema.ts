@@ -40,6 +40,8 @@ export const dhanScrips = pgTable("dhan_scrips", {
   symbol: text("symbol").notNull(),
   isin: text("isin"),
   name: text("name"),
+  /** DHAN's legal-style name (SYMBOL_NAME), e.g. "TATA POWER CO LTD". */
+  legalName: text("legal_name"),
   refreshedAt: ts("refreshed_at").notNull(),
 });
 

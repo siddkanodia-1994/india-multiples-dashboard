@@ -23,6 +23,53 @@ export function nameSimilarity(a: string, b: string): number {
   return both / (x.size + y.size - both);
 }
 
+const tokens = (s: string) => normalizeName(s).split(" ").filter(Boolean);
+
+/** An abbreviation of a word: same first letter, letters in order ("mngt" → management, "techno" → technologies). */
+const abbreviates = (t: string, w: string) => {
+  if (t === w) return true;
+  if (t.length < 2 || t[0] !== w[0] || t.length > w.length) return false;
+  let i = 0;
+  for (const ch of w) if (ch === t[i]) i++;
+  return i === t.length;
+};
+
+/**
+ * How well a DHAN / NSE name (often abbreviated: "TATA POWER CO LTD",
+ * "NIPPON L I A M LTD", "HDFC AMC", "CAMS") fits an Ace name, 0–1. A DHAN
+ * word may match an Ace word exactly, as an abbreviation, as a single
+ * initial, or as the initials of several Ace words in a row.
+ */
+export function matchScore(ace: string, dhan: string): number {
+  const a = tokens(ace);
+  const d = tokens(dhan);
+  if (!a.length || !d.length) return 0;
+  const used = new Array<boolean>(a.length).fill(false);
+  let matchedD = 0;
+  for (const t of d) {
+    let hit = a.findIndex((w, i) => !used[i] && w === t);
+    if (hit < 0) hit = a.findIndex((w, i) => !used[i] && (t.length === 1 ? w[0] === t : abbreviates(t, w)));
+    if (hit >= 0) {
+      used[hit] = true;
+      matchedD++;
+      continue;
+    }
+    // Initials of consecutive Ace words: "amc" → asset management company, "cams" → computer age management services.
+    if (t.length >= 2 && t.length <= 5) {
+      for (let i = 0; i + t.length <= a.length; i++) {
+        const run = a.slice(i, i + t.length);
+        if (run.every((w, j) => !used[i + j] && w[0] === t[j])) {
+          run.forEach((_, j) => (used[i + j] = true));
+          matchedD++;
+          break;
+        }
+      }
+    }
+  }
+  const matchedA = used.filter(Boolean).length;
+  return (matchedA + matchedD) / (a.length + d.length);
+}
+
 /** Splits one CSV line, honouring double-quoted fields. */
 export function splitCsvLine(line: string): string[] {
   const out: string[] = [];

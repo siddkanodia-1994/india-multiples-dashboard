@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateAceRows } from "../ace/validate";
 import { tokenClaims } from "../dhan/token";
 import { isMarketOpen } from "../market";
-import { isLenderIndustry, nameSimilarity, normalizeName, parseNifty500, splitCsvLine } from "./match";
+import { isLenderIndustry, matchScore, nameSimilarity, normalizeName, parseNifty500, splitCsvLine } from "./match";
 
 // Made-up names and numbers only.
 
@@ -19,6 +19,28 @@ describe("name matching", () => {
   });
   it("splits CSV lines with quoted commas", () => {
     expect(splitCsvLine('NSE,E,1,"Alpha, Beta",EQ')).toEqual(["NSE", "E", "1", "Alpha, Beta", "EQ"]);
+  });
+});
+
+describe("abbreviated DHAN names", () => {
+  // Public company names as DHAN and Ace write them (no licensed data).
+  const pairs: [string, string][] = [
+    ["Tata Power Company Ltd.", "TATA POWER CO LTD"],
+    ["HDFC Asset Management Company Ltd.", "HDFC AMC"],
+    ["Computer Age Management Services Ltd.", "CAMS"],
+    ["Nippon Life India Asset Management Ltd.", "NIPPON L I A M LTD"],
+    ["UTI Asset Management Company Ltd.", "UTI ASSET MNGMT CO LTD"],
+    ["Dixon Technologies (India) Ltd.", "DIXON TECHNO (INDIA) LTD"],
+    ["ZF Commercial Vehicle Control Systems India Ltd.", "ZF COM VE CTR SYS IND LTD"],
+    ["Amber Enterprises India Ltd.", "AMBER ENTERPRISES (I) LTD"],
+    ["Dr. Lal Pathlabs Ltd.", "DR. LAL PATH LABS LTD."],
+  ];
+  it.each(pairs)("%s ≈ %s", (ace, dhan) => {
+    expect(matchScore(ace, dhan)).toBeGreaterThanOrEqual(0.75);
+  });
+  it("scores unrelated names low", () => {
+    expect(matchScore("Tata Power Company Ltd.", "TATA STEEL LTD")).toBeLessThan(0.6);
+    expect(matchScore("HDFC Asset Management Company Ltd.", "HDFC BANK LTD")).toBeLessThan(0.5);
   });
 });
 
