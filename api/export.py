@@ -16,6 +16,7 @@ forwards /api/export to it).
 
 import io
 import json
+import math
 import os
 import re
 from datetime import date
@@ -25,6 +26,8 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.chart.axis import ChartLines, DateAxis
 from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import CharacterProperties, Paragraph, ParagraphProperties, RichTextProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -142,16 +145,41 @@ def company_sheet(wb, used, c, ctx):
         if not rows or not bands.get(key):
             ws[anchor] = f"{label}: n.m. — {c.get('nm', {}).get(key) or 'no values in this period'}"
             continue
-        ws.add_chart(line_chart(ws, c["name"], label, ctx, c.get("basisLabel", ctx["basis"]), 3 + m_idx * 6, header_row, last_row), anchor)
+        values = [row[2 + m_idx] for row in rows if row[2 + m_idx] is not None]
+        ws.add_chart(line_chart(ws, c["name"], label, ctx, c.get("basisLabel", ctx["basis"]), 3 + m_idx * 6, header_row, last_row, values, bands[key]), anchor)
     return ws
 
 
-def line_chart(ws, company, label, ctx, basis_label, first_col, header_row, last_row):
+def nice_axis(values, band):
+    """The screen's Y-axis (niceYAxis in bands.ts): the series and all five band lines, padded 5%, on a 1/2/2.5/5 x 10^k step."""
+    lo = min(values + [band["mean"] - 2 * band["sd"]])
+    hi = max(values + [band["mean"] + 2 * band["sd"]])
+    pad = (hi - lo) * 0.05 if hi > lo else 1
+    lo, hi = lo - pad, hi + pad
+    raw = (hi - lo) / 5
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    return math.floor(lo / step) * step, math.ceil(hi / step) * step, step
+
+
+def months_between(a, b):
+    return (date.fromisoformat(b).year - date.fromisoformat(a).year) * 12 + date.fromisoformat(b).month - date.fromisoformat(a).month
+
+
+def axis_text(rot=0):
+    """Small, horizontal axis labels."""
+    return RichText(bodyPr=RichTextProperties(rot=rot, vert="horz"), p=[Paragraph(pPr=ParagraphProperties(defRPr=CharacterProperties(sz=900)), endParaRPr=CharacterProperties(sz=900))])
+
+
+def line_chart(ws, company, label, ctx, basis_label, first_col, header_row, last_row, values, band):
     ch = LineChart()
     ch.title = f"{company} — {label} · {basis_label} · {day_label(ctx['from'])} to {day_label(ctx['to'])}"
-    ch.height = 9.5
+    ch.title.overlay = False
+    ch.height = 10
     ch.width = 26
-    ch.legend.position = "b"
+    # Legend at the top, under the title, with its own space: at the bottom Excel drew it over the date labels.
+    ch.legend.position = "t"
+    ch.legend.overlay = False
     ch.display_blanks = "gap"  # n.m. days are gaps, as on screen
     data = Reference(ws, min_col=first_col, max_col=first_col + 5, min_row=header_row, max_row=last_row)
     ch.add_data(data, titles_from_data=True)
@@ -161,10 +189,15 @@ def line_chart(ws, company, label, ctx, basis_label, first_col, header_row, last
     ch.x_axis = DateAxis(crossAx=100)
     ch.x_axis.number_format = "mmm-yy"
     ch.x_axis.majorTimeUnit = "months"
+    # About a dozen horizontal date labels, whatever the period (1 month apart for 1Y, 3 for 3Y, …).
+    ch.x_axis.majorUnit = max(1, math.ceil(months_between(ctx["from"], ctx["to"]) / 12))
+    ch.x_axis.txPr = axis_text()
     ch.x_axis.majorGridlines = None
     ch.x_axis.delete = False
     ch.y_axis.crossAx = 500
     ch.y_axis.number_format = "0.0"
+    ch.y_axis.scaling.min, ch.y_axis.scaling.max, ch.y_axis.majorUnit = nice_axis(values, band)
+    ch.y_axis.txPr = axis_text()
     ch.y_axis.delete = False
     ch.y_axis.majorGridlines = ChartLines(spPr=GraphicalProperties(ln=LineProperties(solidFill=GRID)))
     return ch

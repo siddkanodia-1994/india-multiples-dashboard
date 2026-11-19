@@ -84,6 +84,14 @@ def main(out):
         grid = root.find(".//c:valAx/c:majorGridlines/c:spPr/a:ln/a:solidFill/a:srgbClr", NS)
         assert grid is not None and grid.get("val") == "EEF0F3", name
         assert root.find(".//c:dispBlanksAs", NS).get("val") == "gap", name
+        # Layout: legend at the top with its own space, horizontal date labels, the screen's Y range.
+        legend = root.find(".//c:legend", NS)
+        assert legend.find("c:legendPos", NS).get("val") == "t", name
+        assert legend.find("c:overlay", NS).get("val") in ("0", "false"), name
+        assert root.find(".//c:dateAx/c:txPr/a:bodyPr", NS).get("rot") == "0", name
+        assert int(root.find(".//c:dateAx/c:majorUnit", NS).get("val")) >= 1, name
+        scaling = root.find(".//c:valAx/c:scaling", NS)
+        assert scaling.find("c:min", NS) is not None and scaling.find("c:max", NS) is not None, name
     print(f"OK: {len(wb.sheetnames)} sheets, {len(charts)} charts checked — colours, widths, dashes, no markers, legend order, gridlines, titles. Saved {out}")
 
 
