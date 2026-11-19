@@ -35,7 +35,13 @@ def fake_company(name, n=60, base=20.0):
         mean = sum(vals) / len(vals)
         sd = (sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5
         return {"mean": mean, "sd": sd}
-    return {"name": name, "basisLabel": "Consolidated", "actions": ["01-Oct-26 · Bonus 1:1"], "netDebt": "₹1,200 cr — entered by Test, as of 30-Sep-26", "rows": rows, "bands": {"pe": band(2), "pbv": band(3), "mcapSales": band(4), "evEbitda": band(5)}}
+    def ladder(k):
+        b = band(k)
+        price = lambda x: None if name == "Sector median" else 100 * x  # noqa: E731
+        lrows = [[lab, b["mean"] + kk * b["sd"], price(b["mean"] + kk * b["sd"])] for lab, kk in (("+2 SD", 2), ("+1 SD", 1), ("Mean", 0), ("−1 SD", -1), ("−2 SD", -2))]
+        last = [r[k] for r in rows if r[k] is not None][-1]
+        return {"rows": lrows + [["Current", last, price(last)]], "sd": b["sd"], "z": (last - b["mean"]) / b["sd"]}
+    return {"name": name, "basisLabel": "Consolidated", "ladder": {"pe": ladder(2), "pbv": ladder(3), "mcapSales": ladder(4), "evEbitda": ladder(5)}, "actions": ["01-Oct-26 · Bonus 1:1"], "netDebt": "₹1,200 cr — entered by Test, as of 30-Sep-26", "rows": rows, "bands": {"pe": band(2), "pbv": band(3), "mcapSales": band(4), "evEbitda": band(5)}}
 
 
 def main(out):
@@ -57,6 +63,15 @@ def main(out):
     assert [ws.cell(header, j).value for j in range(3, 9)] == ["TTM PE", "TTM PE Mean", "TTM PE +1 SD", "TTM PE +2 SD", "TTM PE -1 SD", "TTM PE -2 SD"]
     assert ws.cell(header + 1, 3).number_format == "0.00"
     assert wb["Peer table"]["B5"].number_format == "0.00"
+    # The ladder beside each chart: +2 SD first, Current in bold, prices in rupees (n.m. for the sector median).
+    lad = [(r, c) for r in range(header, header + 90) for c in range(28, 60) if ws.cell(r, c).value == "+2 SD"]
+    assert len(lad) == 4, lad
+    r, c = lad[0]
+    assert [ws.cell(r + i, c).value for i in range(6)] == ["+2 SD", "+1 SD", "Mean", "−1 SD", "−2 SD", "Current"]
+    assert ws.cell(r + 5, c).font.b and ws.cell(r, c + 1).number_format == '0.0"x"' and isinstance(ws.cell(r, c + 2).value, float)
+    assert [ws.cell(r + 6, c).value, ws.cell(r + 7, c).value] == ["SD", "z"]
+    med = wb["Sector median"]
+    assert any(med.cell(rr, cc).value == "n.m." for rr in range(header, header + 20) for cc in range(28, 60))
 
     z = zipfile.ZipFile(out)
     charts = sorted(n for n in z.namelist() if re.match(r"xl/charts/chart\d+\.xml", n))

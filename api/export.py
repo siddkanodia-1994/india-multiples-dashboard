@@ -138,10 +138,12 @@ def company_sheet(wb, used, c, ctx):
         ws.column_dimensions[get_column_letter(j)].width = 9
     ws.freeze_panes = ws.cell(header_row + 1, 3)
 
-    # Four native line charts, to the right of the table, one under another.
-    anchor_col = get_column_letter(len(heads) + 2)
+    # Four native line charts, to the right of the table, one under another, each with its ladder beside it.
+    chart_col = len(heads) + 2
+    anchor_col = get_column_letter(chart_col)
     for m_idx, (key, label) in enumerate(METRICS):
         anchor = f"{anchor_col}{header_row + m_idx * 22}"
+        write_ladder(ws, (c.get("ladder") or {}).get(key), header_row + m_idx * 22 + 1, chart_col + LADDER_OFFSET)
         if not rows or not bands.get(key):
             ws[anchor] = f"{label}: n.m. — {c.get('nm', {}).get(key) or 'no values in this period'}"
             continue
@@ -169,6 +171,46 @@ def months_between(a, b):
 def axis_text(rot=0):
     """Small, horizontal axis labels."""
     return RichText(bodyPr=RichTextProperties(rot=rot, vert="horz"), p=[Paragraph(pPr=ParagraphProperties(defRPr=CharacterProperties(sz=900)), endParaRPr=CharacterProperties(sz=900))])
+
+
+# The 26 cm chart spans about 15.5 default-width columns; the ladder starts just after it.
+LADDER_OFFSET = 16
+X_FMT = '0.0"x"'
+Z_POS = Font(color="B22222")
+Z_NEG = Font(color="2F6F2F")
+MUTED = Font(color="686B72")
+
+
+def write_ladder(ws, ladder, row, col):
+    """The screen's ladder: +2 SD … -2 SD and Current (multiple and implied price), then SD and z."""
+    if not ladder:
+        return
+    for j, h in enumerate(["", "x", "₹"]):
+        cell = ws.cell(row, col + j, h)
+        cell.font = BOLD
+        cell.fill = HEAD_FILL
+        cell.alignment = Alignment(horizontal="left" if j == 0 else "right")
+    for i, (label, mult, price) in enumerate(ladder["rows"], start=1):
+        current = label == "Current"
+        ws.cell(row + i, col, label).font = BOLD if current else MUTED
+        m = ws.cell(row + i, col + 1, mult)
+        m.number_format = X_FMT
+        p = ws.cell(row + i, col + 2, price if price is not None else "n.m.")
+        p.number_format = INR_FMT
+        p.alignment = Alignment(horizontal="right")
+        if current:
+            m.font = p.font = BOLD
+    r = row + len(ladder["rows"]) + 1
+    ws.cell(r, col, "SD").font = MUTED
+    ws.cell(r, col + 1, ladder["sd"]).number_format = '0.00"x"'
+    ws.cell(r + 1, col, "z").font = MUTED
+    z = ws.cell(r + 1, col + 1, ladder["z"] if ladder["z"] is not None else "n.m.")
+    z.number_format = "+0.00;-0.00;0.00"
+    z.alignment = Alignment(horizontal="right")
+    if ladder["z"] is not None:
+        z.font = Z_POS if ladder["z"] > 0 else Z_NEG
+    for j, w in enumerate([10, 9, 11]):
+        ws.column_dimensions[get_column_letter(col + j)].width = w
 
 
 def line_chart(ws, company, label, ctx, basis_label, first_col, header_row, last_row, values, band):
