@@ -1,0 +1,42 @@
+{
+  "name": "india-multiples-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:push": "dotenv -e .env.local -- drizzle-kit push",
+    "db:status": "dotenv -e .env.local -- node scripts/db-status.mjs",
+    "import-ace": "dotenv -e .env.local -- tsx scripts/import-ace.ts",
+    "verify:export": "python3 scripts/verify_export.py /tmp/export-check.xlsx",
+    "export:dev": "python3 api/export.py"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.1",
+    "drizzle-orm": "^0.45.4",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "recharts": "^3.11.0",
+    "swr": "^2.5.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv-cli": "^11.1.0",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
