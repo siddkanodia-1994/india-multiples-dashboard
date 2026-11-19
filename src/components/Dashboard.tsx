@@ -151,6 +151,23 @@ export function Dashboard() {
   // ── ratio bar: jump to a chart, highlight the one in view ──
   const [inView, setInView] = useState<Metric>("pe");
   const sections = useRef<Partial<Record<Metric, HTMLElement | null>>>({});
+
+  // ── floating header: the strip and toolbar stick to the top; their heights place the ratio bar under them ──
+  const mainRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const measure = () => {
+      main.style.setProperty("--strip-h", `${stripRef.current?.offsetHeight ?? 0}px`);
+      main.style.setProperty("--bar-h", `${barRef.current?.offsetHeight ?? 0}px`);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    [stripRef.current, barRef.current].forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [tab?.id, profile?.id]);
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
@@ -253,8 +270,8 @@ export function Dashboard() {
   return (
     <div className="shell">
       <Sidebar ws={ws} current={profile?.id ?? null} onPick={(id) => set({ p: String(id), t: null, c: null })} run={run} />
-      <div className="main">
-        <div className="strip">
+      <div className="main" ref={mainRef}>
+        <div className="strip" ref={stripRef}>
           <span className="brand">India Multiples</span>
           {profile && (
             <div className="tabs" role="tablist">
@@ -324,7 +341,7 @@ export function Dashboard() {
           </div>
         ) : (
           <>
-            <div className="bar">
+            <div className="bar" ref={barRef}>
               <label className="fld">
                 Company
                 <select className="sel" value={company === null ? "" : String(company)} onChange={(e) => set({ c: e.target.value })} disabled={!stockIds.length}>
