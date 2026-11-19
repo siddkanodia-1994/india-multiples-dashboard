@@ -53,6 +53,7 @@ export function SharesPanel({ s, basis, actor, onChanged }: { s: StockData; basi
   const [busy, setBusy] = useState(false);
   const a = s.anchor;
   const t = s.totals;
+  const u = s.netDebtInUse;
 
   const send = async (op: StockOp) => {
     setBusy(true);
@@ -222,28 +223,45 @@ export function SharesPanel({ s, basis, actor, onChanged }: { s: StockData; basi
         <div className="ndrow">
           <span className="src">
             <b>Net debt for EV ({basis === "C" ? "consolidated" : "standalone"}):</b>{" "}
-            {s.netDebt ? (
+            {u ? (
+              u.source === "ace" ? (
+                <>
+                  {crore(u.value)} — from Ace (Latest EV {crore(u.ev)} − Mcap {crore(u.mcap)}), as of {dayLabel(u.asOf)}
+                </>
+              ) : (
+                <>
+                  {crore(u.value)} — override entered by {u.by}, as of {dayLabel(u.asOf)}
+                  {s.netDebt && ` (debt ${crore(s.netDebt.debt)} − cash ${crore(s.netDebt.cash)}${s.netDebt.minority ? ` + minority ${crore(s.netDebt.minority)}` : ""})`}
+                </>
+              )
+            ) : (
+              "not available — upload an Ace file with Latest EV, or enter it as of a date. Until then derived and live EV/EBITDA show n.m. (Ace's own history still shows)"
+            )}
+            {t?.netDebt !== null && t?.netDebt !== undefined && u && Math.abs(t.netDebt - u.value) > 0.01 ? ` · now ${crore(t.netDebt)} after actions` : ""}
+            {s.netDebt && (
               <>
-                {crore(s.netDebt.value)} — entered by {s.netDebt.createdBy}, as of {dayLabel(s.netDebt.asOf)} (debt {crore(s.netDebt.debt)} − cash {crore(s.netDebt.cash)}
-                {s.netDebt.minority ? ` + minority ${crore(s.netDebt.minority)}` : ""}){t?.netDebt !== null && t?.netDebt !== undefined && Math.abs(t.netDebt - s.netDebt.value) > 0.01 ? ` · now ${crore(t.netDebt)} after actions` : ""}{" "}
+                {u?.source === "ace" && (
+                  <small style={{ color: "#6b7280" }}>
+                    {" "}
+                    · an older manual entry ({crore(s.netDebt.value)}, {dayLabel(s.netDebt.asOf)}) is superseded by Ace&apos;s newer figure
+                  </small>
+                )}{" "}
                 <button
                   className="cdots"
                   disabled={busy}
                   onClick={async () => {
-                    if (await dlg.confirm(`Remove the net-debt entry as of ${dayLabel(s.netDebt!.asOf)}?`, "Derived EV/EBITDA falls back to the previous entry, or n.m. It goes to Recently removed for 30 days."))
+                    if (await dlg.confirm(`Remove the manual net-debt entry as of ${dayLabel(s.netDebt!.asOf)}?`, "EV then uses Ace's figure, or n.m. if there is none. It goes to Recently removed for 30 days."))
                       send({ op: "removeNetDebt", id: s.netDebt!.id });
                   }}
                 >
-                  remove
+                  remove manual entry
                 </button>
               </>
-            ) : (
-              "not entered yet — derived and live EV/EBITDA show n.m. until it is (Ace's own history still shows)"
             )}
           </span>
           {!nd && (
             <button className="btn ghost" onClick={() => setNd({ asOf: todayIst(), debt: "", cash: "", minority: "" })}>
-              + {s.netDebt ? "New entry" : "Enter net debt"} as of date
+              + Override as of date
             </button>
           )}
           <label className="sw2">

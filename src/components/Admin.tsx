@@ -122,7 +122,7 @@ export function Admin() {
   };
 
   // ── Ace upload ──
-  const [ace, setAce] = useState<{ fileName: string; chunks: AceRow[][]; preview: CompanyPreview[]; errors: string[]; missing: string[] } | null>(null);
+  const [ace, setAce] = useState<{ fileName: string; chunks: AceRow[][]; preview: CompanyPreview[]; errors: string[]; missing: string[]; mcapSource: string; hasLatestEv: boolean } | null>(null);
   const [aceMsg, setAceMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const pickAce = async (file: File) => {
@@ -139,7 +139,7 @@ export function Admin() {
         setProgress(`Checking ${i + 1} of ${chunks.length}…`);
         preview.push(...(await post<{ companies: CompanyPreview[] }>("/api/admin/ace", { action: "preview", rows: chunks[i] })).companies);
       }
-      setAce({ fileName: file.name, chunks, preview, errors: parsed.errors, missing: parsed.missing });
+      setAce({ fileName: file.name, chunks, preview, errors: parsed.errors, missing: parsed.missing, mcapSource: parsed.mcapSource, hasLatestEv: parsed.hasLatestEv });
     } catch (e) {
       setAceMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -156,10 +156,20 @@ export function Admin() {
         setProgress(`Saving ${i + 1} of ${ace.chunks.length}…`);
         await post("/api/admin/ace", { action: "save", batchId, rows: ace.chunks[i], actor });
       }
-      const done = await post<{ companies: { added: number; changed: number }[] }>("/api/admin/ace", { action: "finish", batchId, actor });
+      setProgress("Matching new companies to DHAN and back-filling their closes…");
+      const done = await post<{ companies: { added: number; changed: number }[]; dhan: { matched: string[]; unmatched: string[]; backfilled: number; errors: string[] } }>("/api/admin/ace", {
+        action: "finish",
+        batchId,
+        actor,
+      });
+      const d = done.dhan;
       setAceMsg({
-        ok: true,
-        text: `Saved as batch ${batchId}: ${done.companies.length} companies, ${done.companies.reduce((s, c) => s + c.added, 0)} new and ${done.companies.reduce((s, c) => s + c.changed, 0)} changed days. New companies need matching to DHAN below.`,
+        ok: !d.errors.length && !d.unmatched.length,
+        text:
+          `Saved as batch ${batchId}: ${done.companies.length} companies, ${done.companies.reduce((s, c) => s + c.added, 0)} new and ${done.companies.reduce((s, c) => s + c.changed, 0)} changed days.` +
+          (d.matched.length ? `\nMatched to DHAN: ${d.matched.join(", ")}. Closes back-filled for ${d.backfilled}.` : "") +
+          (d.unmatched.length ? `\nStill to match by hand (Pick… below): ${d.unmatched.join(", ")}.` : "") +
+          (d.errors.length ? `\n${d.errors.join("\n")}` : ""),
       });
       setAce(null);
       refresh();
@@ -328,6 +338,10 @@ export function Admin() {
               {ace && (
                 <div style={{ marginTop: 12 }}>
                   {ace.missing.length > 0 && <p className="stale">Not in this file: {ace.missing.join(", ")}.</p>}
+                  <p style={{ margin: "0 0 8px", color: "#4b5563" }}>
+                    Daily Mcap: {ace.mcapSource === "ndp_mcap" ? "from NDP_Mcap" : "close × the Latest No of shares (no NDP_Mcap in this file, so share-count-jump alerts are skipped)"} · Net debt for EV:{" "}
+                    {ace.hasLatestEv ? "set automatically from Latest EV − Latest Mcap" : "not in this file (no Latest EV)"} · New companies are matched to DHAN and back-filled after saving.
+                  </p>
                   {ace.errors.length > 0 && <p className="bad">Skipped rows: {ace.errors.join(" · ")}</p>}
                   <div className="scroll">
                     <table className="peer">

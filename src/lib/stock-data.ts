@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "./db/client";
-import { aceDaily, caSuggestions, closes, corporateActions, netDebt, stocks } from "./db/schema";
+import { aceDaily, aceSnapshots, caSuggestions, closes, corporateActions, netDebt, stocks } from "./db/schema";
+import { chooseNetDebt } from "./multiples/netdebt";
 import { isMarketOpen, liveQuotes } from "./dhan/live";
 import { netDebtOf } from "./multiples/actions";
 import { buildSeries, pickBasis } from "./multiples/series";
@@ -26,7 +27,10 @@ export interface StockData {
   /** Held totals on the last point's date, for implied prices (₹ crore, crore shares). */
   totals: { shares: number; pat: number | null; bookValue: number | null; sales: number | null; ebitda: number | null; netDebt: number | null } | null;
   anchor: { date: string; from: string; shares: number; bookValue: number | null } | null;
+  /** The latest hand-entered net debt for this basis (an override), if any. */
   netDebt: (NetDebtEntry & { id: number; value: number; createdBy: string }) | null;
+  /** The net debt actually driving EV: Ace's Latest EV − Mcap, or the override when it's dated later. */
+  netDebtInUse: { source: "ace" | "manual"; value: number; asOf: string; ev?: number; mcap?: number; by?: string } | null;
   actions: (CorporateAction & { createdBy: string; note: string | null })[];
   suggestions: { id: number; date: string; kind: string; detail: Record<string, number | string> }[];
   hasPrices: boolean;
@@ -91,13 +95,14 @@ export async function getStocksData(
   extraClose: Map<number, { date: string; price: number }> = new Map()
 ): Promise<StockData[]> {
   if (!ids.length) return [];
-  const [ss, ace, cl, acts, nds, sugg] = await Promise.all([
+  const [ss, ace, cl, acts, nds, sugg, snaps] = await Promise.all([
     db.select().from(stocks).where(inArray(stocks.id, ids)),
     db.select().from(aceDaily).where(inArray(aceDaily.stockId, ids)).orderBy(asc(aceDaily.stockId), asc(aceDaily.date)),
     db.select().from(closes).where(and(inArray(closes.stockId, ids), gte(closes.date, "2021-01-01"))).orderBy(asc(closes.stockId), asc(closes.date)),
     db.select().from(corporateActions).where(and(inArray(corporateActions.stockId, ids), isNull(corporateActions.deletedAt))).orderBy(asc(corporateActions.date)),
     db.select().from(netDebt).where(and(inArray(netDebt.stockId, ids), isNull(netDebt.deletedAt))).orderBy(desc(netDebt.asOf), desc(netDebt.id)),
     db.select().from(caSuggestions).where(and(inArray(caSuggestions.stockId, ids), eq(caSuggestions.status, "open"))).orderBy(asc(caSuggestions.date)),
+    db.select().from(aceSnapshots).where(inArray(aceSnapshots.stockId, ids)).orderBy(desc(aceSnapshots.asOf)),
   ]);
   return ids.flatMap((id) => {
     const s = ss.find((x) => x.id === id);
@@ -115,7 +120,10 @@ export async function getStocksData(
     const { basis, fallback } = pickBasis(rows.map(day("C")), requested);
     const actions = acts.filter((a) => a.stockId === id).map(toAction);
     const nd = nds.find((n) => n.stockId === id && n.basis === basis) ?? null;
-    const entry: NetDebtEntry | null = nd ? { asOf: nd.asOf, debt: nd.debt, cash: nd.cash, minority: nd.minority } : null;
+    const manual: NetDebtEntry | null = nd ? { asOf: nd.asOf, debt: nd.debt, cash: nd.cash, minority: nd.minority } : null;
+    const snap = snaps.find((x) => x.stockId === id && x.basis === basis && x.ev !== null && x.mcap !== null);
+    const choice = chooseNetDebt(snap ? { asOf: snap.asOf, ev: snap.ev!, mcap: snap.mcap! } : null, manual);
+    const entry = choice?.entry ?? null;
     const myCloses = cl.filter((c) => c.stockId === id).map((c) => ({ date: c.date, price: c.close }));
     const after = extraClose.get(id);
     if (after && !myCloses.some((c) => c.date === after.date)) myCloses.push(after);
@@ -140,7 +148,12 @@ export async function getStocksData(
         points: series.points.map((p) => [p.date, ...METRICS.map((m) => r6(p[m])), SOURCE_CODE[p.source]] as CompactPoint),
         totals: t,
         anchor: series.anchor ? { date: series.anchor.date, from: series.anchor.from, shares: series.anchor.shares, bookValue: series.anchor.bookValue } : null,
-        netDebt: nd && entry ? { ...entry, id: nd.id, value: netDebtOf(entry), createdBy: nd.createdBy } : null,
+        netDebt: nd && manual ? { ...manual, id: nd.id, value: netDebtOf(manual), createdBy: nd.createdBy } : null,
+        netDebtInUse: choice
+          ? choice.source === "ace"
+            ? { source: "ace", value: netDebtOf(choice.entry), asOf: choice.entry.asOf, ev: choice.ace.ev, mcap: choice.ace.mcap }
+            : { source: "manual", value: netDebtOf(choice.entry), asOf: choice.entry.asOf, by: nd?.createdBy }
+          : null,
         actions,
         suggestions: sugg.filter((x) => x.stockId === id).map((x) => ({ id: x.id, date: x.date, kind: x.kind, detail: x.detail as Record<string, number | string> })),
         hasPrices: s.dhanSecurityId !== null,

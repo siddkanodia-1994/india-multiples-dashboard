@@ -83,6 +83,27 @@ export const aceSuperseded = pgTable(
   (t) => [primaryKey({ columns: [t.batchId, t.stockId, t.date] })]
 );
 
+/**
+ * Ace's "Latest" Market Cap / EV / shares for a stock and basis, dated to the
+ * stock's last day in that upload. Net debt = EV − Mcap, set automatically by
+ * every upload that carries Latest EV (₹ crore; shares in crore).
+ */
+export const aceSnapshots = pgTable(
+  "ace_snapshots",
+  {
+    stockId: integer("stock_id")
+      .notNull()
+      .references(() => stocks.id),
+    basis: char("basis", { length: 1 }).notNull(), // 'C' | 'S'
+    asOf: day("as_of").notNull(),
+    mcap: doublePrecision("mcap"),
+    ev: doublePrecision("ev"),
+    shares: doublePrecision("shares"),
+    batchId: integer("batch_id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.stockId, t.basis, t.asOf] })]
+);
+
 export const uploadBatches = pgTable("upload_batches", {
   id: serial("id").primaryKey(),
   kind: text("kind").notNull(), // 'ace' | 'nifty500'

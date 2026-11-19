@@ -29,7 +29,17 @@ export function validateAceRows(input: unknown): { rows: AceRow[]; error: string
         basis[b][m] = (v[m] as number | null | undefined) ?? null;
       }
     }
-    rows.push({ accordCode: o.accordCode as number, name: String(o.name ?? "").slice(0, 200), date: o.date, close: o.close as number | null, mcap: o.mcap as number | null, ...basis });
+    let latest: AceRow["latest"];
+    if (o.latest !== undefined) {
+      const l = o.latest as Record<string, Record<string, unknown>>;
+      latest = {} as NonNullable<AceRow["latest"]>;
+      for (const b of ["C", "S"] as const) {
+        const v = l?.[b] ?? {};
+        if (!okNum(v.mcap ?? null, 1e8) || !okNum(v.ev ?? null, 1e8) || !okNum(v.shares ?? null, 1e6)) return { rows: [], error: `Bad latest ${b} values on ${o.date}` };
+        latest[b] = { mcap: (v.mcap as number | null) ?? null, ev: (v.ev as number | null) ?? null, shares: (v.shares as number | null) ?? null };
+      }
+    }
+    rows.push({ accordCode: o.accordCode as number, name: String(o.name ?? "").slice(0, 200), date: o.date, close: o.close as number | null, mcap: o.mcap as number | null, ...basis, ...(latest ? { latest } : {}) });
   }
   return { rows, error: null };
 }

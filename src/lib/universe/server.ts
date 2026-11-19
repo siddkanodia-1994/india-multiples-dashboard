@@ -126,6 +126,12 @@ export async function applyMatch(stockId: number, securityId: number, actor: str
   await log(actor, "match", "stock", String(stockId), `Matched ${s.name} to NSE ${scrip.symbol} (DHAN ${securityId})`);
 }
 
+/** Refreshes DHAN's list when it is empty or more than a day old. */
+export async function ensureFreshScrips(): Promise<void> {
+  const [r] = await db.select({ at: sql<string | null>`max(${dhanScrips.refreshedAt})::text` }).from(dhanScrips);
+  if (!r?.at || Date.now() - new Date(r.at).getTime() > 86_400_000) await refreshDhanScrips();
+}
+
 /** Matches every unmatched Ace stock whose name has exactly one perfect candidate. */
 export async function autoMatch(actor: string): Promise<{ matched: string[]; unmatched: { stockId: number; name: string; candidates: Candidate[] }[] }> {
   const open = await db.select().from(stocks).where(isNull(stocks.dhanSecurityId));

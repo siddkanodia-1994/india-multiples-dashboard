@@ -1,6 +1,6 @@
 import { and, asc, between, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { aceDaily, aceSuperseded, activityLog, caSuggestions, stocks, uploadBatches } from "../db/schema";
+import { aceDaily, aceSnapshots, aceSuperseded, activityLog, caSuggestions, stocks, uploadBatches } from "../db/schema";
 import { aceShareJumps } from "../multiples/suggest";
 import type { AceRow } from "./parse";
 
@@ -172,6 +172,21 @@ export async function saveAceChunk(batchId: number, rows: AceRow[]): Promise<Com
           ),
         });
     }
+    // Ace's Latest Mcap/EV/shares snapshot: net debt for EV, dated to this company's last day in the file.
+    const last = [...mine].reverse().find((r) => r.latest);
+    if (last?.latest) {
+      for (const b of ["C", "S"] as const) {
+        const l = last.latest[b];
+        if (l.ev === null || l.mcap === null) continue;
+        await db
+          .insert(aceSnapshots)
+          .values({ stockId, basis: b, asOf: last.date, mcap: l.mcap, ev: l.ev, shares: l.shares, batchId })
+          .onConflictDoUpdate({
+            target: [aceSnapshots.stockId, aceSnapshots.basis, aceSnapshots.asOf],
+            set: { mcap: l.mcap, ev: l.ev, shares: l.shares, batchId },
+          });
+      }
+    }
     summaries.push({ stockId, name: mine[0].name, from: mine[0].date, to: mine.at(-1)!.date, added: writes.length - superseded.length, changed: superseded.length, unchanged, newStock });
   }
   // Merge into the batch summary (chunks arrive one at a time from one browser).
@@ -239,6 +254,7 @@ export async function rollbackAceBatch(batchId: number, actor: string): Promise<
   if (!latest || latest.id !== batchId) throw new Error("Only the most recent Ace upload can be rolled back.");
   const back = await db.select().from(aceSuperseded).where(eq(aceSuperseded.batchId, batchId));
   const removed = await db.delete(aceDaily).where(eq(aceDaily.batchId, batchId)).returning({ d: aceDaily.date });
+  await db.delete(aceSnapshots).where(eq(aceSnapshots.batchId, batchId));
   for (let i = 0; i < back.length; i += CHUNK) {
     await db
       .insert(aceDaily)

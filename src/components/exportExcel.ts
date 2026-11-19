@@ -67,7 +67,13 @@ export function exportCompany(name: string, basisLabel: string, points: Multiple
     name,
     basisLabel,
     actions: s ? s.actions.map(ACTION_TEXT) : [],
-    netDebt: s ? (s.netDebt ? `${crore(s.netDebt.value)} — entered by ${s.netDebt.createdBy}, as of ${dayLabel(s.netDebt.asOf)}` : "Not entered — derived EV/EBITDA is n.m.") : "Median of the tab's companies each day",
+    netDebt: s
+      ? s.netDebtInUse
+        ? s.netDebtInUse.source === "ace"
+          ? `${crore(s.netDebtInUse.value)} — from Ace (Latest EV ${crore(s.netDebtInUse.ev)} − Mcap ${crore(s.netDebtInUse.mcap)}), as of ${dayLabel(s.netDebtInUse.asOf)}`
+          : `${crore(s.netDebtInUse.value)} — override entered by ${s.netDebtInUse.by}, as of ${dayLabel(s.netDebtInUse.asOf)}`
+        : "Not available — derived EV/EBITDA is n.m."
+      : "Median of the tab's companies each day",
     rows: inRange.map((p) => [p.date, p.source, ...METRICS.map((m) => (byMetric[m].some((r) => r.date === p.date) ? p[m] : null))] as ExportCompany["rows"][number]),
     bands,
     ladder,

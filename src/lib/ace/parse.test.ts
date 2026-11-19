@@ -54,4 +54,18 @@ describe("parseAceRows", () => {
     expect(rows).toHaveLength(1);
     expect(errors).toEqual(["Row 2: a multiple is not a number.", "Row 4: duplicate date 2026-11-18 for Accord Code 2."]);
   });
+
+  it("works out Mcap from the Latest share count when NDP_Mcap is absent, and reads the Latest snapshot", () => {
+    const head = [...HEADER.filter((h) => h !== "NDP_Mcap"), "SCC_Latest Market Cap", "SCC_Latest EV", "SCC_Latest No of shares", "SC_Latest Market Cap", "SC_Latest EV", "SC_Latest No of Shares"];
+    const { rows, errors, mcapSource, hasLatestEv } = parseAceRows([head, [7, "Gamma Power Ltd.", 46344, 12, 2, 3, 20, 2.1, 11, 2.9, 19, 100, 1200, 1500, 120000000, 1200, 1300, 120000000]]);
+    expect(errors).toEqual([]);
+    expect(mcapSource).toBe("latest_shares");
+    expect(hasLatestEv).toBe(true);
+    expect(rows[0].mcap).toBeCloseTo(1200, 9); // ₹100 × 12 cr shares
+    expect(rows[0].latest).toEqual({ C: { mcap: 1200, ev: 1500, shares: 12 }, S: { mcap: 1200, ev: 1300, shares: 12 } });
+  });
+
+  it("refuses a file with neither NDP_Mcap nor a Latest share count", () => {
+    expect(parseAceRows([HEADER.filter((h) => h !== "NDP_Mcap"), [7, "G", 46344, 1, 1, 1, 1, 1, 1, 1, 1, 100]]).errors[0]).toMatch(/NDP_Mcap/);
+  });
 });
