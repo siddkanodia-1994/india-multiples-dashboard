@@ -266,7 +266,7 @@ export function Admin() {
         <Link href="/" className="btn ghost" style={{ textDecoration: "none" }}>
           ← Dashboard
         </Link>
-        <span className="saved" style={{ color: "#686b72" }}>
+        <span className="saved">
           Acting as <b>{actor}</b>
         </span>
       </div>

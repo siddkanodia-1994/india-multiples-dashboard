@@ -109,3 +109,14 @@ h3.sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--
   .main .ratiobar{top:calc(var(--strip-h,0px) + var(--bar-h,0px))}
   .grid>section{scroll-margin-top:calc(var(--strip-h,0px) + var(--bar-h,0px) + 56px)}
 }
+/* Header theme F: charcoal with gold (chosen 19-Nov-26). Header strip, toolbar and ratio bar only; charts, red section bands and the sidebar are unchanged. */
+:root{--hdr:#111827;--hdr-2:#1f2937;--hdr-line:#374151;--gold:#c9a227;--hdr-soft:#fafaf7}
+.strip{background:var(--hdr);border-bottom-color:var(--gold)}
+.strip .brand,.strip .saved{color:#fff}
+.strip .saved.bad{color:#fca5a5}
+.strip .tab{background:var(--hdr-2);border-color:var(--hdr-line);color:#d1d5db}
+.strip .tab.on{background:var(--gold);border-color:var(--gold);color:var(--hdr)}
+.strip .tab.add{background:transparent;color:#d1d5db}
+.strip .tab .dots{color:inherit}
+.bar,.ratiobar{background:var(--hdr-soft)}
+.bar .seg button.on,.ratiobar .seg button.on,.bar .btn:not(.ghost){background:var(--hdr)}
