@@ -144,7 +144,7 @@ export async function applyOp(o: WorkspaceOp, actorRaw: unknown): Promise<void> 
         db.update(tabs).set(gone).where(and(eq(tabs.profileId, o.id), isNull(tabs.deletedAt))),
         db.update(tabStocks).set(gone).where(and(inArray(tabStocks.tabId, tabIds.length ? tabIds : [-1]), isNull(tabStocks.deletedAt))),
       ]);
-      return log(actor, "remove", "profile", o.id, `Removed profile ${p.name} (with ${tabIds.length} tabs)`);
+      return log(actor, "remove", "profile", o.id, `Removed profile ${p.name} (with ${tabIds.length} tab${tabIds.length === 1 ? "" : "s"})`);
     }
     case "duplicateProfile": {
       const p = await liveProfile(o.id);
