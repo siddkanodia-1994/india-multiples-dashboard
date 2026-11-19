@@ -120,3 +120,6 @@ h3.sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .strip .tab .dots{color:inherit}
 .bar,.ratiobar{background:var(--hdr-soft)}
 .bar .seg button.on,.ratiobar .seg button.on,.bar .btn:not(.ghost){background:var(--hdr)}
+/* Mean, Current and z stand out in the ladder (Current also takes the ink colour). */
+.ladder tr.strong th,.ladder tr.strong td{font-weight:800}
+.ladder tr.strong th{color:var(--ink)}

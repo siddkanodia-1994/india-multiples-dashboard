@@ -70,6 +70,7 @@ def main(out):
     assert [ws.cell(r + i, c).value for i in range(6)] == ["+2 SD", "+1 SD", "Mean", "−1 SD", "−2 SD", "Current"]
     assert ws.cell(r + 5, c).font.b and ws.cell(r, c + 1).number_format == '0.0"x"' and isinstance(ws.cell(r, c + 2).value, float)
     assert [ws.cell(r + 6, c).value, ws.cell(r + 7, c).value] == ["SD", "z"]
+    assert ws.cell(r + 2, c).font.b and ws.cell(r + 2, c + 1).font.b and ws.cell(r + 7, c).font.b and ws.cell(r + 7, c + 1).font.b, "Mean, Current and z must be bold"
     med = wb["Sector median"]
     assert any(med.cell(rr, cc).value == "n.m." for rr in range(header, header + 20) for cc in range(28, 60))
 

@@ -176,8 +176,8 @@ def axis_text(rot=0):
 # The 26 cm chart spans about 15.5 default-width columns; the ladder starts just after it.
 LADDER_OFFSET = 16
 X_FMT = '0.0"x"'
-Z_POS = Font(color="B22222")
-Z_NEG = Font(color="2F6F2F")
+Z_POS = Font(bold=True, color="B22222")
+Z_NEG = Font(bold=True, color="2F6F2F")
 MUTED = Font(color="686B72")
 
 
@@ -191,7 +191,7 @@ def write_ladder(ws, ladder, row, col):
         cell.fill = HEAD_FILL
         cell.alignment = Alignment(horizontal="left" if j == 0 else "right")
     for i, (label, mult, price) in enumerate(ladder["rows"], start=1):
-        current = label == "Current"
+        current = label in ("Current", "Mean")  # Mean, Current and z are bold, as on screen
         ws.cell(row + i, col, label).font = BOLD if current else MUTED
         m = ws.cell(row + i, col + 1, mult)
         m.number_format = X_FMT
@@ -203,7 +203,7 @@ def write_ladder(ws, ladder, row, col):
     r = row + len(ladder["rows"]) + 1
     ws.cell(r, col, "SD").font = MUTED
     ws.cell(r, col + 1, ladder["sd"]).number_format = '0.00"x"'
-    ws.cell(r + 1, col, "z").font = MUTED
+    ws.cell(r + 1, col, "z").font = BOLD
     z = ws.cell(r + 1, col + 1, ladder["z"] if ladder["z"] is not None else "n.m.")
     z.number_format = "+0.00;-0.00;0.00"
     z.alignment = Alignment(horizontal="right")

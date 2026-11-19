@@ -118,7 +118,7 @@ export function BandChart({
           {LADDER.map((k) => {
             const v = bandValue(bands, k);
             return (
-              <tr key={k}>
+              <tr key={k} className={k === 0 ? "strong" : undefined}>
                 <th>{LADDER_LABEL[k]}</th>
                 <td>{mult(v)}</td>
                 <td>{inr(priceAt(v))}</td>
@@ -135,7 +135,7 @@ export function BandChart({
             <td>{mult(bands.sd, 2)}</td>
             <td />
           </tr>
-          <tr>
+          <tr className="strong">
             <th>z</th>
             <td className={bands.z !== null && bands.z > 0 ? "zpos" : "zneg"}>{zText(bands.z)}</td>
             <td />
