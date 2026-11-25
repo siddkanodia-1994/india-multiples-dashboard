@@ -71,6 +71,10 @@ def main(out):
     assert ws.cell(r + 5, c).font.b and ws.cell(r, c + 1).number_format == '0.0"x"' and isinstance(ws.cell(r, c + 2).value, float)
     assert [ws.cell(r + 6, c).value, ws.cell(r + 7, c).value] == ["SD", "z"]
     assert ws.cell(r + 2, c).font.b and ws.cell(r + 2, c + 1).font.b and ws.cell(r + 7, c).font.b and ws.cell(r + 7, c + 1).font.b, "Mean, Current and z must be bold"
+    # Style E: band rows keyed by line colour, Mean shaded, Current a navy bar with white text.
+    assert [ws.cell(r + i, c).border.left.color.rgb[-6:] for i in range(5)] == ["B22222", "E07B26", "4B5563", "7CAD5B", "2F4F2F"]
+    assert all(ws.cell(r + 2, c + j).fill.fgColor.rgb[-6:] == "F3F4F6" for j in range(3)), "Mean row must be shaded"
+    assert all(ws.cell(r + 5, c + j).fill.fgColor.rgb[-6:] == "1F2A5C" and ws.cell(r + 5, c + j).font.color.rgb[-6:] == "FFFFFF" for j in range(3)), "Current must be a navy bar"
     med = wb["Sector median"]
     assert any(med.cell(rr, cc).value == "n.m." for rr in range(header, header + 20) for cc in range(28, 60))
 

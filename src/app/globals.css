@@ -120,6 +120,15 @@ h3.sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .strip .tab .dots{color:inherit}
 .bar,.ratiobar{background:var(--hdr-soft)}
 .bar .seg button.on,.ratiobar .seg button.on,.bar .btn:not(.ghost){background:var(--hdr)}
-/* Mean, Current and z stand out in the ladder (Current also takes the ink colour). */
+/* Ladder style E (chosen 20-Nov-26): each band row keyed by its chart-line colour, so the table doubles as the
+   legend; Mean shaded, Current in a navy bar (the series colour), z bold. */
+.ladder{font-size:12px}
+.ladder td,.ladder th{padding:5px 6px}
+.ladder thead th{color:#9ca3af}
+.ladder tbody th{color:#4b5563}
+.ladder .sw{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:7px;vertical-align:middle}
 .ladder tr.strong th,.ladder tr.strong td{font-weight:800}
 .ladder tr.strong th{color:var(--ink)}
+.ladder tr.mean th,.ladder tr.mean td{background:#f3f4f6}
+.ladder tr.cur th,.ladder tr.cur td{background:#1f2a5c;color:#fff}
+.ladder tr.cur .sw{background:#fff}

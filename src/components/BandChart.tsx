@@ -20,6 +20,7 @@ export const BAND_LINES = [
 ] as const;
 const LADDER = [2, 1, 0, -1, -2] as const;
 const LADDER_LABEL: Record<number, string> = { 2: "+2 SD", 1: "+1 SD", 0: "Mean", [-1]: "−1 SD", [-2]: "−2 SD" };
+const LADDER_COLOR: Record<number, string> = { 2: COLORS.p2, 1: COLORS.p1, 0: COLORS.mean, [-1]: COLORS.m1, [-2]: COLORS.m2 };
 
 export interface ChartRow {
   date: string;
@@ -118,15 +119,21 @@ export function BandChart({
           {LADDER.map((k) => {
             const v = bandValue(bands, k);
             return (
-              <tr key={k} className={k === 0 ? "strong" : undefined}>
-                <th>{LADDER_LABEL[k]}</th>
+              <tr key={k} className={k === 0 ? "strong mean" : undefined}>
+                <th>
+                  <i className="sw" style={{ background: LADDER_COLOR[k] }} />
+                  {LADDER_LABEL[k]}
+                </th>
                 <td>{mult(v)}</td>
                 <td>{inr(priceAt(v))}</td>
               </tr>
             );
           })}
           <tr className="cur">
-            <th>Current</th>
+            <th>
+              <i className="sw" />
+              Current
+            </th>
             <td>{mult(bands.current)}</td>
             <td>{inr(priceAt(bands.current))}</td>
           </tr>

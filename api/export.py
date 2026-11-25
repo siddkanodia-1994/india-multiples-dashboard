@@ -29,7 +29,7 @@ from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.chart.text import RichText
 from openpyxl.drawing.text import CharacterProperties, Paragraph, ParagraphProperties, RichTextProperties
 from openpyxl.drawing.line import LineProperties
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 MAX_BODY = 8 * 1024 * 1024
@@ -178,7 +178,13 @@ LADDER_OFFSET = 16
 X_FMT = '0.0"x"'
 Z_POS = Font(bold=True, color="B22222")
 Z_NEG = Font(bold=True, color="2F6F2F")
-MUTED = Font(color="686B72")
+MUTED = Font(color="4B5563")
+# Style E, as on screen: each band row keyed by its line colour (a thick left edge here), Mean shaded,
+# Current in a navy bar.
+LADDER_KEY = {"+2 SD": "B22222", "+1 SD": "E07B26", "Mean": "4B5563", "−1 SD": "7CAD5B", "−2 SD": "2F4F2F"}
+MEAN_FILL = PatternFill("solid", fgColor="F3F4F6")
+CUR_FILL = PatternFill("solid", fgColor="1F2A5C")
+CUR_FONT = Font(bold=True, color="FFFFFF")
 
 
 def write_ladder(ws, ladder, row, col):
@@ -200,6 +206,14 @@ def write_ladder(ws, ladder, row, col):
         p.alignment = Alignment(horizontal="right")
         if current:
             m.font = p.font = BOLD
+        if label in LADDER_KEY:
+            ws.cell(row + i, col).border = Border(left=Side(style="thick", color=LADDER_KEY[label]))
+        if label in ("Mean", "Current"):
+            for j in range(3):
+                cell = ws.cell(row + i, col + j)
+                cell.fill = MEAN_FILL if label == "Mean" else CUR_FILL
+                if label == "Current":
+                    cell.font = CUR_FONT
     r = row + len(ladder["rows"]) + 1
     ws.cell(r, col, "SD").font = MUTED
     ws.cell(r, col + 1, ladder["sd"]).number_format = '0.00"x"'
