@@ -26,16 +26,25 @@ const addDays = (iso: string, n: number) => {
 
 export const todayIst = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
+/**
+ * Where a stock's pull starts. First pull: 14 days before its last Ace day.
+ * After that: the last 14 days, or the day after its last saved close when
+ * that is older — so closes missed while the DHAN token was missing or
+ * expired, for any number of days, come back on the next sync.
+ */
+export function syncFrom(lastClose: string | null, lastAce: string | null, today: string): string {
+  const recent = addDays(today, -LOOKBACK_DAYS);
+  const start = lastClose ? (lastClose < recent ? addDays(lastClose, 1) : recent) : lastAce ? addDays(lastAce, -LOOKBACK_DAYS) : recent;
+  return start < HISTORY_START ? HISTORY_START : start;
+}
+
 /** Pulls one stock's closes and records any split/bonus-looking price drops. Returns the days written. */
 export async function syncStockCloses(stockId: number, securityId: number, c: DhanCredentials, today = todayIst()): Promise<number> {
   const [[lastAce], [lastClose]] = await Promise.all([
     db.select({ d: sql<string | null>`max(${aceDaily.date})::text` }).from(aceDaily).where(eq(aceDaily.stockId, stockId)),
     db.select({ d: sql<string | null>`max(${closes.date})::text` }).from(closes).where(eq(closes.stockId, stockId)),
   ]);
-  const recent = addDays(today, -LOOKBACK_DAYS);
-  // First pull: from 14 days before the last Ace day. After that: the last 14 days (or further back if a gap opened up).
-  const start = lastClose.d ? (lastClose.d < recent ? addDays(lastClose.d, 1) : recent) : lastAce.d ? addDays(lastAce.d, -LOOKBACK_DAYS) : recent;
-  const from = start < HISTORY_START ? HISTORY_START : start;
+  const from = syncFrom(lastClose.d, lastAce.d, today);
   // DHAN serves at most about a year per request.
   const rows: { date: string; close: number }[] = [];
   for (let a = from; a <= today; a = addDays(edate(a, 12), 1)) {

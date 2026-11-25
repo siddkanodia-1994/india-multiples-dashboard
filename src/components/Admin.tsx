@@ -36,6 +36,23 @@ interface Candidate {
 const PROFILE_KEY = "im.profile";
 const CHUNK_ROWS = 5000;
 
+/** The earliest last-close among matched stocks: where a back-fill starts. */
+function closesFrom(s: Status | undefined): string | null {
+  const last = (s?.universe ?? []).filter((u) => u.dhanSecurityId && u.lastClose).map((u) => u.lastClose!);
+  return last.length ? last.reduce((a, b) => (a < b ? a : b)) : null;
+}
+
+/** Weekdays after `iso` up to yesterday (IST): sessions that may be missing (holidays aside; today's close lands at 7:05 PM). */
+function weekdaysSince(iso: string): number {
+  const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+  let n = 0;
+  for (let d = new Date(`${iso}T00:00:00Z`); ; ) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (d.toISOString().slice(0, 10) >= today) return n;
+    if (d.getUTCDay() % 6) n++;
+  }
+}
+
 async function post<T>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
@@ -84,7 +101,8 @@ function Msg({ m }: { m: { ok: boolean; text: string } | null }) {
 
 export function Admin() {
   const dlg = useDialogs();
-  const st = useSWR<Status>("/api/admin/status", fetcher);
+  // While a close sync runs (e.g. the back-fill after a new token), poll so its progress shows.
+  const st = useSWR<Status>("/api/admin/status", fetcher, { refreshInterval: (d) => (d?.sync?.status === "running" ? 4000 : 0) });
   const ws = useSWR<Workspace>("/api/workspace", fetcher);
   // Read after hydration (the server has no localStorage), so both renders agree.
   const remembered = useSyncExternalStore(
@@ -103,6 +121,7 @@ export function Admin() {
 
   // ── DHAN ──
   const [clientId, setClientId] = useState("");
+  const [needClientId, setNeedClientId] = useState(false);
   const [token, setToken] = useState("");
   const [dhanMsg, setDhanMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -110,12 +129,22 @@ export function Admin() {
     setBusy("dhan");
     setDhanMsg(null);
     try {
-      await post("/api/admin/dhan", { clientId, token, actor });
+      const r = await post<{ clientId: string; fromToken: boolean }>("/api/admin/dhan", { clientId, token, actor });
       setToken("");
-      setDhanMsg({ ok: true, text: "Saved — DHAN answered a test quote." });
+      setClientId("");
+      setNeedClientId(false);
+      const behind = closesFrom(st.data);
+      setDhanMsg({
+        ok: true,
+        text:
+          `Saved — DHAN answered a test quote. Client ID ${r.clientId}${r.fromToken ? " read from the token" : ""}.` +
+          `\nBack-filling closes${behind ? ` missed since ${dayLabel(behind)}` : ""} for every matched stock now, in the background — progress shows under Daily closes.`,
+      });
       refresh();
     } catch (e) {
-      setDhanMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      const text = e instanceof Error ? e.message : String(e);
+      if (/type the client ID/.test(text)) setNeedClientId(true);
+      setDhanMsg({ ok: false, text });
     } finally {
       setBusy(null);
     }
@@ -286,7 +315,7 @@ export function Admin() {
           <div className="empty">Loading…</div>
         ) : (
           <>
-            <Section title="DHAN market data" note="one shared client ID and token · the token is write-only and never shown again">
+            <Section title="DHAN market data" note="one shared token · the client ID is read from the token · the token is write-only and never shown again">
               <div className="ca-kv">
                 {s.dhan.configured ? (
                   <>
@@ -306,15 +335,17 @@ export function Admin() {
                   saveDhan();
                 }}
               >
-                <label className="fld">
-                  Client ID
-                  <input className="sel" value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" autoComplete="off" />
-                </label>
                 <label className="fld" style={{ flex: 1, minWidth: 260 }}>
                   Access token
                   <input className="sel" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
                 </label>
-                <button className="btn" disabled={busy === "dhan" || !clientId || !token}>
+                {needClientId && (
+                  <label className="fld">
+                    Client ID
+                    <input className="sel" value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" autoComplete="off" />
+                  </label>
+                )}
+                <button className="btn" disabled={busy === "dhan" || !token || (needClientId && !clientId)}>
                   {busy === "dhan" ? "Testing…" : "Test and save"}
                 </button>
               </form>
@@ -325,6 +356,23 @@ export function Admin() {
               <div className="ca-kv">
                 Last run: {s.sync?.updatedAt ? `${new Date(s.sync.updatedAt).toLocaleString("en-IN")} — ${s.sync.status}` : "never"}
                 {s.sync?.cursor?.errors?.length ? <span className="bad"> · {s.sync.cursor.errors.length} errors</span> : null}
+                {s.sync?.status === "running" && s.sync.cursor ? <> · {s.sync.cursor.next} of {s.universe.filter((u) => u.dhanSecurityId).length} stocks done</> : null}
+                <br />
+                {(() => {
+                  const from = closesFrom(s);
+                  return from ? (
+                    <>
+                      Closes saved up to <b>{dayLabel(from)}</b> for every matched stock
+                      {weekdaysSince(from) > 1 ? (
+                        <span className="stale">
+                          {` · ${weekdaysSince(from)} weekdays since then — saving a valid token (or Sync now) back-fills them from the day after each stock's last close`}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    "No closes yet."
+                  );
+                })()}
               </div>
               <button className="btn" onClick={syncNow} disabled={busy !== null}>
                 {busy === "sync" ? progress ?? "Syncing…" : "Sync now"}

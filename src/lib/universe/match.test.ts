@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateAceRows } from "../ace/validate";
 import { tokenClaims } from "../dhan/token";
 import { isMarketOpen } from "../market";
+import { syncFrom } from "../sync";
 import { isLenderIndustry, matchScore, nameSimilarity, normalizeName, parseNifty500, splitCsvLine } from "./match";
 
 // Made-up names and numbers only.
@@ -83,5 +84,18 @@ describe("server checks", () => {
     expect(isMarketOpen(new Date("2026-11-18T04:00:00Z"))).toBe(true); // Wed 9:30 IST
     expect(isMarketOpen(new Date("2026-11-18T10:30:00Z"))).toBe(false); // Wed 16:00 IST
     expect(isMarketOpen(new Date("2026-11-21T05:00:00Z"))).toBe(false); // Saturday
+  });
+});
+
+describe("close back-fill after a token gap", () => {
+  it("re-pulls the last 14 days, so a 3–4 day gap fills itself", () => {
+    expect(syncFrom("2026-11-20", "2026-09-30", "2026-11-25")).toBe("2026-11-11");
+  });
+  it("starts from the day after the last close when the gap is longer than 14 days", () => {
+    expect(syncFrom("2026-10-01", "2026-09-30", "2026-11-25")).toBe("2026-10-02");
+  });
+  it("first pull starts 14 days before the last Ace day, never before 2021", () => {
+    expect(syncFrom(null, "2026-09-30", "2026-11-25")).toBe("2026-09-16");
+    expect(syncFrom(null, "2021-01-05", "2026-11-25")).toBe("2021-01-01");
   });
 });

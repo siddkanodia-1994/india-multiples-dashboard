@@ -12,7 +12,13 @@ export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const progress = await syncCloses(Date.now() + 240_000);
+  // A missing or expired DHAN token stops the closes, not the purge; the closes come back once a new token is saved.
+  let progress;
+  try {
+    progress = await syncCloses(Date.now() + 240_000);
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e), purged: await purgeBin() }, { status: 503 });
+  }
   if (!progress.done) {
     const next = new URL(request.url);
     after(() => fetch(next, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } }).then(() => undefined));
